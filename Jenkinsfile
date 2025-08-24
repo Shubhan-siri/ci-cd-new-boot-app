@@ -3,12 +3,14 @@ pipeline {
 
     environment {
         JAR_NAME = "target/demo-0.0.1-SNAPSHOT.jar"
+        PORT = 9090
     }
 
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/Shubhan-siri/ci-cd-new-boot-app.git'
+                // Explicitly use the main branch
+                git branch: 'main', url: 'https://github.com/Shubhan-siri/ci-cd-new-boot-app.git'
             }
         }
 
@@ -32,14 +34,16 @@ pipeline {
                 // Stop existing app if running
                 sh 'pkill -f "java -jar app.jar" || true'
 
-                // Start app in background on port 9090
-                sh 'nohup java -jar app.jar --server.port=9090 > app.log 2>&1 &'
+                // Start app in background on configured port
+                sh "nohup java -jar app.jar --server.port=$PORT > app.log 2>&1 &"
             }
         }
 
         stage('Smoke Test') {
             steps {
-                sh 'curl -sSf http://localhost:9090/ | head -n 1'
+                // Wait for app to start
+                sh 'sleep 10'
+                sh "curl -sSf http://localhost:$PORT/ | head -n 1"
             }
         }
     }
