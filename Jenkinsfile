@@ -1,43 +1,53 @@
 pipeline {
-  agent any
-  options { timestamps(); disableConcurrentBuilds() }
-  tools { maven 'M3' }
-  environment { APP_PORT = '9090' }
-  triggers { pollSCM('H/2 * * * *') }
-  stages {
-    stage('Checkout') { steps { checkout scm } }
-    stage('Build & Test') { steps { sh 'mvn -B clean verify' } }
-    stage('Package & Archive') {
-      steps {
-        sh '''
-          mkdir -p target
-          JAR=$(ls target/*SNAPSHOT.jar 2>/dev/null | head -n 1)
-          if [ -z "$JAR" ]; then JAR=$(ls target/*.jar | head -n 1); fi
-          cp "$JAR" app.jar
-        '''
-        archiveArtifacts artifacts: 'app.jar', fingerprint: true
-      }
+    agent any
+
+    environment {
+        JAR_NAME = "target/demo-0.0.1-SNAPSHOT.jar"
     }
-    stage('Deploy') {
-      steps {
-        sh '''
-          pkill -f "java -jar app.jar" || true
-          nohup java -jar app.jar --server.port=${APP_PORT} > app.log 2>&1 &
-          sleep 3
-          pgrep -f "java -jar app.jar" >/dev/null && echo "App started" || (echo "App failed"; tail -n 100 app.log; exit 1)
-        '''
-      }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/Shubhan-siri/ci-cd-new-boot-app.git'
+            }
+        }
+
+        stage('Build & Test') {
+            steps {
+                sh 'mvn clean verify'
+            }
+        }
+
+        stage('Package') {
+            steps {
+                sh """
+                    cp $JAR_NAME app.jar
+                """
+                archiveArtifacts artifacts: 'app.jar', fingerprint: true
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                // Stop existing app if running
+                sh 'pkill -f "java -jar app.jar" || true'
+
+                // Start app in background on port 9090
+                sh 'nohup java -jar app.jar --server.port=9090 > app.log 2>&1 &'
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh 'curl -sSf http://localhost:9090/ | head -n 1'
+            }
+        }
     }
-    stage('Smoke Test') {
-      steps {
-        sh 'curl -sSf http://localhost:${APP_PORT}/ | head -n 1'
-      }
+
+    post {
+        always {
+            echo 'Last 20 lines of app.log (if present):'
+            sh 'tail -n 20 app.log || true'
+        }
     }
-  }
-  post {
-    always {
-      echo 'Last 20 lines of app.log (if present):'
-      sh 'tail -n 20 app.log || true'
-    }
-  }
 }
